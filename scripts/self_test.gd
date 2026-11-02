@@ -3,6 +3,7 @@ extends SceneTree
 const GameRules = preload("res://scripts/rules.gd")
 const LevelCatalog = preload("res://scripts/levels.gd")
 const SquaresAi = preload("res://scripts/ai.gd")
+const Campaign = preload("res://scripts/campaign.gd")
 
 var fails := 0
 
@@ -20,6 +21,7 @@ func _run() -> void:
 	_test_magnet_ignores_open_neighbor()
 	_test_ai_takes_capture()
 	_test_playouts()
+	_test_campaign()
 	print("SELFTEST ", "OK" if fails == 0 else "FAILED (%d)" % fails)
 	quit(0 if fails == 0 else 1)
 
@@ -191,6 +193,24 @@ func _playout(level: Dictionary, difficulty: String) -> String:
 	if int(scores[1]) + int(scores[2]) != GameRules.total_points(state.cells):
 		return "счёт %s против %s" % [scores, GameRules.total_points(state.cells)]
 	return ""
+
+
+func _test_campaign() -> void:
+	var shapes := {}
+	for index in range(1, 25):
+		var level: Dictionary = Campaign.level_at(index)
+		var issues: Array = LevelCatalog.problems(level)
+		check(issues.is_empty(), "кампания %d %s %s" % [index, level.get("name", ""), issues])
+		var again: Dictionary = Campaign.level_at(index)
+		check(again.rows == level.rows and again.res == level.res, "стабильная форма %d" % index)
+		var total := int(level.total)
+		var goal := int(level.target)
+		check(goal > int(total / 2) and goal < total, "цель %d: %d из %d" % [index, goal, total])
+		shapes[str(level.rows)] = true
+	check(shapes.size() >= 6, "формы кампании различаются: %d" % shapes.size())
+	var generated: Dictionary = Campaign.level_at(8)
+	check(int(generated.index) > 3, "после третьего уровня поле собирается дальше")
+	check(_playout(generated, str(generated.ai)) == "", "партия на собранном поле")
 
 
 func _set_edge(state: Dictionary, edge: Array, owner: int) -> void:

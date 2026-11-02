@@ -1,23 +1,20 @@
 extends Control
 
 const Palette = preload("res://scripts/palette.gd")
-const LevelCatalog = preload("res://scripts/levels.gd")
+const Campaign = preload("res://scripts/campaign.gd")
 const BoardView = preload("res://scripts/board.gd")
 const GameRules = preload("res://scripts/rules.gd")
-
-const SAVE_PATH := "user://squares.cfg"
 
 var _screen := "menu"
 var board: BoardView
 var menu_screen: Control
 var rules_screen: Control
-var levels_screen: Control
 var game_screen: Control
-var levels_box: VBoxContainer
-var mode_dialog: Control
-var mode_title: Label
-var mode_blurb: Label
 var pending_level: Dictionary = {}
+var menu_preview: ShapePreview
+var stat_level: Label
+var stat_points: Label
+var stat_goal: Label
 var level_title: Label
 var mode_label: Label
 var status_label: Label
@@ -30,6 +27,7 @@ var p1_meta: Label
 var p2_meta: Label
 var spark_button: Button
 var overlay: Control
+var overlay_next: Button
 var overlay_title: Label
 var overlay_sub: Label
 var overlay_s1: Label
@@ -99,9 +97,8 @@ func _build() -> void:
 
 	menu_screen = _build_menu()
 	rules_screen = _build_rules()
-	levels_screen = _build_levels()
 	game_screen = _build_game()
-	for screen in [menu_screen, rules_screen, levels_screen, game_screen]:
+	for screen in [menu_screen, rules_screen, game_screen]:
 		screen.set_anchors_preset(Control.PRESET_FULL_RECT)
 		host.add_child(screen)
 
@@ -115,24 +112,32 @@ func _build_menu() -> Control:
 	root.add_child(box)
 
 	box.add_child(_spacer())
-	box.add_child(_label("Квадраты", 58, Palette.CREAM, true))
-	box.add_child(_label("Ставьте палочки и забирайте клетки", 20, Palette.CREAM_DIM, true))
+	box.add_child(_label("Квадраты", 52, Palette.CREAM, true))
+	box.add_child(_label("Каждый следующий уровень — после победы", 18, Palette.CREAM_DIM, true))
 
-	var demo: Dictionary = {}
-	for level in LevelCatalog.all():
-		if str(level.id) == "yard":
-			demo = level
-			break
-	var preview := ShapePreview.new()
-	preview.box_size = Vector2(168, 168)
-	preview.rows = demo.get("rows", [])
-	preview.marks = _mark_colors(demo)
-	preview.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	box.add_child(preview)
+	menu_preview = ShapePreview.new()
+	menu_preview.box_size = Vector2(150, 150)
+	menu_preview.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	box.add_child(menu_preview)
 
-	var play := _button("Выбрать поле")
+	var stats := PanelContainer.new()
+	stats.add_theme_stylebox_override("panel", _flat(Palette.PANEL, 16))
+	stats.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var stats_box := VBoxContainer.new()
+	stats_box.add_theme_constant_override("separation", 2)
+	stats.add_child(stats_box)
+	stat_level = _label("Уровень 1", 22, Palette.CREAM, true)
+	stat_points = _label("Очки: 0", 28, Palette.GOLD, true)
+	stat_goal = _label("", 16, Palette.CREAM_DIM, true)
+	stat_goal.autowrap_mode = TextServer.AUTOWRAP_WORD
+	stats_box.add_child(stat_level)
+	stats_box.add_child(stat_points)
+	stats_box.add_child(stat_goal)
+	box.add_child(stats)
+
+	var play := _button("Играть")
 	_paint_button(play, Palette.P1, Palette.CREAM)
-	play.pressed.connect(func() -> void: _show("levels"))
+	play.pressed.connect(_play_current)
 	box.add_child(play)
 
 	var rules := _button("Как играть")
@@ -140,7 +145,7 @@ func _build_menu() -> Control:
 	box.add_child(rules)
 
 	box.add_child(_spacer())
-	box.add_child(_label("Два игрока на одном телефоне или партия против ИИ", 16, Palette.MUTED, true))
+	box.add_child(_label("После третьего уровня форма поля меняется, условия остаются", 16, Palette.MUTED, true))
 	return root
 
 
@@ -168,71 +173,6 @@ func _build_rules() -> Control:
 	var back := _button("Назад")
 	back.pressed.connect(func() -> void: _show("menu"))
 	box.add_child(back)
-	return root
-
-
-func _build_levels() -> Control:
-	var root := Control.new()
-	var box := VBoxContainer.new()
-	box.set_anchors_preset(Control.PRESET_FULL_RECT)
-	box.add_theme_constant_override("separation", 12)
-	root.add_child(box)
-	box.add_child(_label("Поля", 36, Palette.CREAM, true))
-	box.add_child(_label("Дыры — не клетки. Точки внутри — ресурсы.", 16, Palette.MUTED, true))
-
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	box.add_child(scroll)
-	levels_box = VBoxContainer.new()
-	levels_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	levels_box.add_theme_constant_override("separation", 10)
-	scroll.add_child(levels_box)
-
-	var back := _button("В меню")
-	back.pressed.connect(func() -> void: _show("menu"))
-	box.add_child(back)
-
-	mode_dialog = ColorRect.new()
-	mode_dialog.color = Color(0, 0, 0, 0.55)
-	mode_dialog.set_anchors_preset(Control.PRESET_FULL_RECT)
-	mode_dialog.visible = false
-	mode_dialog.mouse_filter = Control.MOUSE_FILTER_STOP
-	mode_dialog.gui_input.connect(_on_mode_backdrop)
-	root.add_child(mode_dialog)
-
-	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	mode_dialog.add_child(center)
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(300, 0)
-	panel.add_theme_stylebox_override("panel", _flat(Palette.PANEL, 20))
-	center.add_child(panel)
-	var dialog_box := VBoxContainer.new()
-	dialog_box.add_theme_constant_override("separation", 10)
-	panel.add_child(dialog_box)
-	mode_title = _label("Поле", 28, Palette.CREAM, true)
-	mode_blurb = _label("", 16, Palette.CREAM_DIM, true)
-	mode_blurb.autowrap_mode = TextServer.AUTOWRAP_WORD
-	dialog_box.add_child(mode_title)
-	dialog_box.add_child(mode_blurb)
-	dialog_box.add_child(_label("Кто начинает — решает жребий. Против ИИ вы играете за Алых.", 15, Palette.MUTED, true))
-
-	var hotseat := _button("Вдвоём на этом экране")
-	hotseat.pressed.connect(_start_game.bind("hotseat", ""))
-	dialog_box.add_child(hotseat)
-	var easy := _button("ИИ · спокойный")
-	_paint_button(easy, Palette.P2_DARK, Palette.CREAM)
-	easy.pressed.connect(_start_game.bind("ai", "easy"))
-	dialog_box.add_child(easy)
-	var hard := _button("ИИ · внимательный")
-	_paint_button(hard, Palette.P2, Palette.INK)
-	hard.pressed.connect(_start_game.bind("ai", "normal"))
-	dialog_box.add_child(hard)
-	var cancel := _button("Назад")
-	cancel.pressed.connect(func() -> void: mode_dialog.visible = false)
-	dialog_box.add_child(cancel)
 	return root
 
 
@@ -287,9 +227,9 @@ func _build_game() -> Control:
 	again.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	again.pressed.connect(_restart)
 	actions.add_child(again)
-	var leave := _button("К полям")
+	var leave := _button("В меню")
 	leave.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	leave.pressed.connect(func() -> void: _show("levels"))
+	leave.pressed.connect(func() -> void: _show("menu"))
 	actions.add_child(leave)
 
 	overlay = ColorRect.new()
@@ -323,14 +263,18 @@ func _build_game() -> Control:
 	score_row.add_child(_label(":", 40, Palette.CREAM, true))
 	score_row.add_child(overlay_s2)
 	result.add_child(overlay_sub)
+	overlay_next = _button("Дальше")
+	_paint_button(overlay_next, Palette.P1, Palette.CREAM)
+	overlay_next.visible = false
+	overlay_next.pressed.connect(_play_current)
+	result.add_child(overlay_next)
 	var rematch := _button("Ещё раз")
-	_paint_button(rematch, Palette.P1, Palette.CREAM)
 	rematch.pressed.connect(_restart)
 	result.add_child(rematch)
-	var fields := _button("К полям")
+	var fields := _button("В меню")
 	fields.pressed.connect(func() -> void:
 		overlay.visible = false
-		_show("levels")
+		_show("menu")
 	)
 	result.add_child(fields)
 	return root
@@ -359,77 +303,28 @@ func _score_card(player: int) -> Dictionary:
 	return {"panel": panel, "score": score, "meta": meta}
 
 
-func _fill_levels() -> void:
-	for child in levels_box.get_children():
-		levels_box.remove_child(child)
-		child.free()
-	for level in LevelCatalog.all():
-		levels_box.add_child(_level_button(level))
-
-
-func _level_button(level: Dictionary) -> Button:
-	var button := Button.new()
-	button.text = ""
-	button.custom_minimum_size = Vector2(0, 108)
-	button.focus_mode = Control.FOCUS_NONE
-	button.pressed.connect(_ask_mode.bind(level.duplicate(true)))
-
-	var margin := MarginContainer.new()
-	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	for side in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
-		margin.add_theme_constant_override(side, 10)
-	button.add_child(margin)
-
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 12)
-	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	margin.add_child(row)
-
-	var preview := ShapePreview.new()
-	preview.box_size = Vector2(78, 78)
-	preview.rows = level.rows
-	preview.marks = _mark_colors(level)
-	row.add_child(preview)
-
-	var text := VBoxContainer.new()
-	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	text.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_child(text)
-	var name := _label(str(level.name), 22, Palette.CREAM, false)
-	name.clip_text = true
-	name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	text.add_child(name)
-	var blurb := _label(str(level.blurb), 15, Palette.CREAM_DIM, false)
-	blurb.autowrap_mode = TextServer.AUTOWRAP_WORD
-	text.add_child(blurb)
-	var record := _record_line(str(level.id))
-	if record != "":
-		text.add_child(_label(record, 14, Palette.GOLD, false))
-	_ignore_tree(margin)
-	return button
-
-
-func _ask_mode(level: Dictionary) -> void:
-	pending_level = level
-	mode_title.text = str(level.name)
-	mode_blurb.text = str(level.blurb)
-	mode_dialog.visible = true
-
-
-func _on_mode_backdrop(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		mode_dialog.visible = false
-
-
-func _start_game(mode: String, difficulty: String) -> void:
-	if pending_level.is_empty():
-		return
-	mode_dialog.visible = false
+func _play_current() -> void:
+	pending_level = Campaign.level_at(Campaign.unlocked())
 	overlay.visible = false
+	overlay_next.visible = false
 	_show("game")
-	board.load_level(pending_level, mode, difficulty)
+	board.load_level(pending_level, "ai", str(pending_level.get("ai", "normal")))
 	_refresh_hud()
+
+
+func _refresh_menu() -> void:
+	var level: Dictionary = Campaign.level_at(Campaign.unlocked())
+	var index := int(level.index)
+	stat_level.text = "Уровень %d · %s" % [index, str(level.name)]
+	stat_points.text = "Очки: %d    Пройдено: %d" % [Campaign.total_points(), Campaign.cleared_count()]
+	var goal_line := "Цель: %d очков и победа" % int(level.target)
+	var best := Campaign.best_score(index)
+	if best >= 0:
+		goal_line += "\nЛучший результат этого уровня: %d" % best
+	stat_goal.text = goal_line
+	menu_preview.rows = level.rows
+	menu_preview.marks = _mark_colors(level)
+	menu_preview.queue_redraw()
 
 
 func _restart() -> void:
@@ -442,11 +337,9 @@ func _show(screen: String) -> void:
 	_screen = screen
 	menu_screen.visible = screen == "menu"
 	rules_screen.visible = screen == "rules"
-	levels_screen.visible = screen == "levels"
 	game_screen.visible = screen == "game"
-	if screen == "levels":
-		mode_dialog.visible = false
-		_fill_levels()
+	if screen == "menu":
+		_refresh_menu()
 	if screen == "game":
 		board.resume()
 	else:
@@ -462,12 +355,7 @@ func _back() -> void:
 		if overlay.visible:
 			overlay.visible = false
 			return
-		_show("levels")
-	elif _screen == "levels":
-		if mode_dialog.visible:
-			mode_dialog.visible = false
-		else:
-			_show("menu")
+		_show("menu")
 	elif _screen == "rules":
 		_show("menu")
 	elif _screen == "menu" and OS.has_feature("mobile"):
@@ -477,8 +365,10 @@ func _back() -> void:
 func _refresh_hud() -> void:
 	if board.level_data.is_empty():
 		return
-	level_title.text = str(board.level_data.get("name", ""))
-	mode_label.text = board.mode_line()
+	var index := int(board.level_data.get("index", 1))
+	var target := int(board.level_data.get("target", 0))
+	level_title.text = "Уровень %d · %s" % [index, str(board.level_data.get("name", ""))]
+	mode_label.text = "Цель: %d очков и победа" % target
 	status_label.text = board.status_line()
 	hint_label.text = board.hint_line()
 	status_label.add_theme_color_override("font_color", Palette.color_of(board.current) if not board.over else Palette.CREAM)
@@ -516,58 +406,31 @@ func _refresh_spark_button() -> void:
 
 func _on_finished(scores, winner) -> void:
 	_refresh_hud()
-	overlay_s1.text = str(int(scores[1]))
+	var score := int(scores[1])
+	var target := int(board.level_data.get("target", 1))
+	var index := int(board.level_data.get("index", 1))
+	var cleared := int(winner) == 1 and score >= target
+	overlay_s1.text = str(score)
 	overlay_s2.text = str(int(scores[2]))
-	if int(winner) == 0:
+	overlay_next.visible = cleared
+	if cleared:
+		Campaign.note_clear(index, score)
+		overlay_title.text = "Уровень пройден"
+		overlay_title.add_theme_color_override("font_color", Palette.P1)
+		overlay_sub.text = "Набрано %d при цели %d. Следующий уровень открыт. Всего очков: %d." % [score, target, Campaign.total_points()]
+	elif int(winner) == 1:
+		overlay_title.text = "Победа не засчитана"
+		overlay_title.add_theme_color_override("font_color", Palette.GOLD)
+		overlay_sub.text = "Нужно %d очков, набрано %d. Доберите цель и обыграйте Бирюзу." % [target, score]
+	elif int(winner) == 0:
 		overlay_title.text = "Ничья"
 		overlay_title.add_theme_color_override("font_color", Palette.CREAM)
-		overlay_sub.text = "Очки сравнялись."
+		overlay_sub.text = "Чтобы открыть следующий уровень, нужны победа и %d очков." % target
 	else:
-		overlay_title.text = "Победа · %s" % Palette.name_of(int(winner))
-		overlay_title.add_theme_color_override("font_color", Palette.color_of(int(winner)))
-		if board.vs_ai and int(winner) == 1:
-			overlay_sub.text = "Вы набрали больше очков."
-		elif board.vs_ai and int(winner) == 2:
-			overlay_sub.text = "ИИ набрал больше очков."
-		else:
-			overlay_sub.text = "Больше очков у того, кто закрыл удачные клетки."
-	if board.vs_ai:
-		var score := int(scores[1])
-		if _write_best(str(board.level_data.get("id", "")), board.ai_difficulty, score) and score > 0:
-			overlay_sub.text += " Новый рекорд."
+		overlay_title.text = "Победа · Бирюза"
+		overlay_title.add_theme_color_override("font_color", Palette.P2)
+		overlay_sub.text = "Чтобы открыть следующий уровень, нужны победа и %d очков." % target
 	overlay.visible = true
-
-
-func _record_line(level_id: String) -> String:
-	var easy := _read_best(level_id, "easy")
-	var hard := _read_best(level_id, "normal")
-	var bits: Array = []
-	if easy >= 0:
-		bits.append("спокойный %d" % easy)
-	if hard >= 0:
-		bits.append("внимательный %d" % hard)
-	if bits.is_empty():
-		return ""
-	return "Рекорд — " + " · ".join(PackedStringArray(bits))
-
-
-func _read_best(level_id: String, difficulty: String) -> int:
-	var config := ConfigFile.new()
-	if config.load(SAVE_PATH) != OK:
-		return -1
-	return int(config.get_value("best", "%s|%s" % [level_id, difficulty], -1))
-
-
-func _write_best(level_id: String, difficulty: String, score: int) -> bool:
-	var config := ConfigFile.new()
-	config.load(SAVE_PATH)
-	var key := "%s|%s" % [level_id, difficulty]
-	var previous := int(config.get_value("best", key, -1))
-	if score <= previous:
-		return false
-	config.set_value("best", key, score)
-	config.save(SAVE_PATH)
-	return true
 
 
 func _mark_colors(level: Dictionary) -> Dictionary:
@@ -601,7 +464,7 @@ func _rules_text() -> String:
 		"",
 		"На клетке победителя стоит крестик, на клетке соперника — кружок. Побеждает тот, у кого больше очков.",
 		"",
-		"Можно играть вдвоём на одном телефоне или против ИИ. Против ИИ вы всегда Алые.",
+		"Уровни идут по порядку. Следующий открывается, только если вы победили и набрали цель по очкам. Первые три поля фиксированные. Дальше тип остаётся — пруд, крест, лестница, острова, змейка или крепость, — а форма этого типа каждый раз другая. Вы играете за Алых против ИИ.",
 	]))
 
 
@@ -661,13 +524,6 @@ func _flat(fill: Color, radius: int, border: Color = Color(0, 0, 0, 0), border_w
 		style.border_width_right = border_width
 		style.border_width_bottom = border_width
 	return style
-
-
-func _ignore_tree(node: Node) -> void:
-	if node is Control:
-		node.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for child in node.get_children():
-		_ignore_tree(child)
 
 
 class ShapePreview extends Control:
