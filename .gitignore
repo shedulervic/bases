@@ -1,0 +1,9 @@
+.godot/
+.vscode/
+*.translation
+export/
+*.apk
+*.aab
+*.tmp
+*.tmp.uid
+.DS_Store
