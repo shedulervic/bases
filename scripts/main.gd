@@ -15,6 +15,8 @@ var menu_preview: ShapePreview
 var stat_level: Label
 var stat_points: Label
 var stat_goal: Label
+var reset_button: Button
+var reset_dialog: Control
 var level_title: Label
 var mode_label: Label
 var status_label: Label
@@ -144,9 +146,58 @@ func _build_menu() -> Control:
 	rules.pressed.connect(func() -> void: _show("rules"))
 	box.add_child(rules)
 
+	reset_button = _button("Сбросить прогресс")
+	reset_button.pressed.connect(func() -> void: reset_dialog.visible = true)
+	box.add_child(reset_button)
+
 	box.add_child(_spacer())
 	box.add_child(_label("После третьего уровня форма поля меняется, условия остаются", 16, Palette.MUTED, true))
+
+	reset_dialog = _build_reset_dialog()
+	root.add_child(reset_dialog)
 	return root
+
+
+func _build_reset_dialog() -> Control:
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.55)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.visible = false
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	dim.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			dim.visible = false
+	)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dim.add_child(center)
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(280, 0)
+	panel.add_theme_stylebox_override("panel", _flat(Palette.PANEL, 20))
+	center.add_child(panel)
+	var dialog := VBoxContainer.new()
+	dialog.add_theme_constant_override("separation", 10)
+	panel.add_child(dialog)
+	var title := _label("Сбросить прогресс?", 26, Palette.CREAM, true)
+	var body := _label("Очки и открытые уровни пропадут. Кампания начнётся с Калитки.", 16, Palette.CREAM_DIM, true)
+	body.autowrap_mode = TextServer.AUTOWRAP_WORD
+	dialog.add_child(title)
+	dialog.add_child(body)
+	var confirm := _button("Сбросить")
+	_paint_button(confirm, Palette.P1, Palette.CREAM)
+	confirm.pressed.connect(_confirm_reset)
+	dialog.add_child(confirm)
+	var cancel := _button("Отмена")
+	cancel.pressed.connect(func() -> void: dim.visible = false)
+	dialog.add_child(cancel)
+	return dim
+
+
+func _confirm_reset() -> void:
+	Campaign.reset()
+	reset_dialog.visible = false
+	_refresh_menu()
 
 
 func _build_rules() -> Control:
@@ -322,6 +373,7 @@ func _refresh_menu() -> void:
 	if best >= 0:
 		goal_line += "\nЛучший результат этого уровня: %d" % best
 	stat_goal.text = goal_line
+	reset_button.disabled = Campaign.cleared_count() == 0 and Campaign.total_points() == 0
 	menu_preview.rows = level.rows
 	menu_preview.marks = _mark_colors(level)
 	menu_preview.queue_redraw()
@@ -358,6 +410,8 @@ func _back() -> void:
 		_show("menu")
 	elif _screen == "rules":
 		_show("menu")
+	elif _screen == "menu" and reset_dialog.visible:
+		reset_dialog.visible = false
 	elif _screen == "menu" and OS.has_feature("mobile"):
 		get_tree().quit()
 

@@ -53,6 +53,13 @@ static func goal_for(index: int, total: int) -> int:
 	return mini(need, total - 1)
 
 
+static func reset() -> void:
+	var config := _config()
+	if config.has_section("campaign"):
+		config.erase_section("campaign")
+		config.save(SAVE_PATH)
+
+
 static func note_clear(index: int, score: int) -> void:
 	var config := _config()
 	var best := int(config.get_value("campaign", "best_%d" % index, -1))
