@@ -44,13 +44,13 @@ static func points(res: String) -> int:
 static func resource_toast(res: String) -> String:
 	match res:
 		"gem":
-			return "Самоцвет · 2 очка"
+			return "Самоцвет +2"
 		"crown":
-			return "Корона · 3 очка и искра"
+			return "Корона +3 и искра!"
 		"spark":
-			return "Искра в запасе"
+			return "Искра в запасе!"
 		"magnet":
-			return "Магнит забирает базу"
+			return "Магнит тянет соседей!"
 		_:
 			return ""
 

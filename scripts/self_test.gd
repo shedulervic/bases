@@ -14,6 +14,7 @@ func _init() -> void:
 
 func _run() -> void:
 	_test_catalog()
+	_test_holes()
 	_test_crown_and_basic_close()
 	_test_closer_owns_the_cell()
 	_test_double_close()
@@ -54,6 +55,15 @@ func _test_catalog() -> void:
 			for edge in GameRules.cell_edges(cell):
 				var board: Dictionary = state.h if str(edge[0]) == "h" else state.v
 				check(board.has(edge[1]), "грань %s" % id)
+
+
+func _test_holes() -> void:
+	var pond: Array = LevelCatalog.holes(["####", "#..#", "####"])
+	check(pond.size() == 2 and pond.has(Vector2i(1, 1)) and pond.has(Vector2i(2, 1)), "дыра внутри пруда")
+	var cross: Array = LevelCatalog.holes([".#.", "###", ".#."])
+	check(cross.is_empty(), "углы креста не дыры")
+	var snake: Array = LevelCatalog.holes(["###", "..#", "###"])
+	check(snake.size() == 2, "щель змейки между коридорами")
 
 
 func _test_crown_and_basic_close() -> void:

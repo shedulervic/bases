@@ -55,6 +55,32 @@ static func problems(level: Dictionary) -> Array:
 	return issues
 
 
+## Дыры, которые рисуются водой: пустые места, зажатые клетками
+## по ряду или по столбцу. Пустые углы креста и лестницы сюда не входят.
+static func holes(rows: Array) -> Array:
+	var found: Array = []
+	var height := rows.size()
+	for r in height:
+		var line := str(rows[r])
+		for c in line.length():
+			if line[c] == "#":
+				continue
+			var in_row := line.substr(0, c).contains("#") and line.substr(c + 1).contains("#")
+			var above := false
+			var below := false
+			for other in height:
+				var other_line := str(rows[other])
+				if c >= other_line.length() or other_line[c] != "#":
+					continue
+				if other < r:
+					above = true
+				elif other > r:
+					below = true
+			if in_row or (above and below):
+				found.append(Vector2i(c, r))
+	return found
+
+
 static func build(level: Dictionary) -> Dictionary:
 	var issues: Array = problems(level)
 	if not issues.is_empty():

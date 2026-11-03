@@ -5,6 +5,7 @@ const Palette = preload("res://scripts/palette.gd")
 const GameRules = preload("res://scripts/rules.gd")
 const LevelCatalog = preload("res://scripts/levels.gd")
 const SquaresAi = preload("res://scripts/ai.gd")
+const BoardArt = preload("res://scripts/art.gd")
 
 signal changed
 signal finished(scores, winner)
@@ -19,6 +20,7 @@ var ai_difficulty := "normal"
 var h_edges: Dictionary = {}
 var v_edges: Dictionary = {}
 var cells: Dictionary = {}
+var holes: Array = []
 var sparks: Array = [0, 0, 0]
 var current := 1
 var phase := PHASE_HUMAN
@@ -136,6 +138,7 @@ func _reset() -> void:
 	h_edges = built.h
 	v_edges = built.v
 	cells = built.cells
+	holes = LevelCatalog.holes(level_data.get("rows", []))
 	sparks = [0, 0, 0]
 	current = 1 if randf() < 0.5 else 2
 	phase = PHASE_HUMAN
@@ -241,7 +244,7 @@ func _apply(kind: String, pos: Vector2i, consume_spark: bool) -> bool:
 	if placed.claimed.size() >= 2:
 		toasts.append({
 			"cell": placed.claimed[placed.claimed.size() - 1],
-			"text": "База · %d" % placed.claimed.size(),
+			"text": "Серия ×%d!" % placed.claimed.size(),
 			"age": 0.0,
 		})
 	var claimed: Array = placed.claimed
@@ -325,6 +328,9 @@ func _draw() -> void:
 	var metrics := _metrics()
 	if not bool(metrics.ok):
 		return
+	for raw_hole in holes:
+		var hole: Vector2i = raw_hole
+		BoardArt.water(self, Rect2(_dot(hole.x, hole.y, metrics), Vector2.ONE * _cs(metrics)))
 	for cell in cells.keys():
 		if int(cells[cell].owner) == 0:
 			_draw_cell(cell, metrics)
@@ -353,6 +359,8 @@ func _draw_cell(cell: Vector2i, metrics: Dictionary) -> void:
 	var owner := int(cells[cell].owner)
 	var rect := Rect2(top_left, Vector2(cell_px, cell_px))
 	var fill: Color = Palette.CREAM
+	if owner == 0 and GameRules.edge_count(cell, h_edges, v_edges) == 3:
+		fill = Palette.READY
 	if owner != 0:
 		var shown := clampf(float(claim_anim.get(cell, 1.0)), 0.0, 1.0)
 		var ease := 1.0 - pow(1.0 - shown, 3.0)
@@ -365,12 +373,13 @@ func _draw_cell(cell: Vector2i, metrics: Dictionary) -> void:
 func _draw_owned_edge(kind: String, pos: Vector2i, owner: int, metrics: Dictionary) -> void:
 	var segment := _segment(kind, pos, metrics)
 	if owner == 0:
-		draw_line(segment[0], segment[1], Color(Palette.INK, 0.34), maxf(2.0, _cs(metrics) * 0.045), true)
+		var dash := maxf(4.0, _cs(metrics) * 0.11)
+		draw_dashed_line(segment[0], segment[1], Color(Palette.INK, 0.7), maxf(3.0, _cs(metrics) * 0.05), dash)
 		return
 	var key := _ekey(kind, pos)
 	var shown := clampf(float(edge_anim.get(key, 1.0)), 0.0, 1.0)
 	var color := Palette.INK
-	var width := maxf(3.0, _cs(metrics) * 0.075)
+	var width := maxf(4.0, _cs(metrics) * 0.09)
 	if last_edge_set.has(key):
 		color = Palette.color_of(owner)
 		width *= 1.15
@@ -398,30 +407,26 @@ func _draw_mark_and_resource(cell: Vector2i, metrics: Dictionary) -> void:
 	var shown := 1.0
 	if owner != 0:
 		shown = 1.0 - pow(1.0 - clampf(float(claim_anim.get(cell, 1.0)), 0.0, 1.0), 3.0)
+	var icon_at := center
+	var radius := maxf(6.0, cell_px * 0.22)
 	if owner != 0 and shown > 0.45:
 		var at := center
+		var mark_r := cell_px * 0.2
 		if res != "":
-			at = top_left + Vector2(cell_px * 0.24, cell_px * 0.24)
-		var mark := Color(1, 1, 1, 0.82)
+			at = top_left + Vector2(cell_px * 0.23, cell_px * 0.23)
+			mark_r = cell_px * 0.12
+			icon_at = top_left + Vector2(cell_px * 0.6, cell_px * 0.6)
+			radius = maxf(6.0, cell_px * 0.19)
+		var mark := Color(Palette.INK, 0.85)
 		if owner == 1:
-			_draw_cross(at, cell_px * 0.09, mark)
+			BoardArt.cross(self, at, mark_r, mark)
 		else:
-			draw_arc(at, cell_px * 0.08, 0.0, TAU, 20, mark, maxf(2.0, cell_px * 0.028), true)
+			BoardArt.ring(self, at, mark_r, mark)
 	if res == "":
 		return
-	var radius := maxf(5.0, cell_px * 0.15)
-	var chip := Color(1, 1, 1, 0.55) if owner == 0 else Color(0, 0, 0, 0.18)
-	draw_circle(center, radius * 1.45, chip)
-	var icon: Color = Palette.resource_color(res)
-	match res:
-		"gem":
-			_draw_gem(center, radius, icon)
-		"spark":
-			_draw_spark(center, radius, icon)
-		"magnet":
-			_draw_magnet(center, radius, icon)
-		"crown":
-			_draw_crown(center, radius, icon)
+	var chip := Color(1, 1, 1, 0.55) if owner == 0 else Color(Palette.CREAM, 0.9)
+	draw_circle(icon_at, radius * 1.4, chip)
+	BoardArt.resource(self, res, icon_at, radius)
 
 
 func _draw_toasts(metrics: Dictionary) -> void:
@@ -429,75 +434,19 @@ func _draw_toasts(metrics: Dictionary) -> void:
 	if font == null:
 		return
 	var cell_px := _cs(metrics)
-	var font_size := int(clamp(cell_px * 0.2, 14.0, 22.0))
+	var font_size := int(clamp(cell_px * 0.32, 24.0, 32.0))
 	for index in toasts.size():
 		var toast: Dictionary = toasts[index]
 		var alpha := clampf(1.0 - float(toast.age) / 1.2, 0.0, 1.0)
 		var spot: Vector2i = toast.cell
 		var center := _dot(spot.x, spot.y, metrics)
 		center += Vector2(cell_px * 0.5, cell_px * 0.22)
-		center.y -= float(toast.age) * 16.0 + float(index) * 6.0
+		center.y -= float(toast.age) * 16.0 + float(index) * (font_size + 12.0)
 		var text := str(toast.text)
 		var text_size := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
 		var box := Rect2(center.x - text_size.x * 0.5 - 8.0, center.y - font.get_ascent(font_size) - 4.0, text_size.x + 16.0, text_size.y + 8.0)
 		draw_rect(box, Color(0, 0, 0, 0.58 * alpha), true)
 		draw_string(font, Vector2(box.position.x + 8.0, box.position.y + 4.0 + font.get_ascent(font_size)), text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(Palette.CREAM, alpha))
-
-
-func _draw_cross(at: Vector2, radius: float, color: Color) -> void:
-	var width := maxf(2.0, radius * 0.38)
-	draw_line(at + Vector2(-radius, -radius), at + Vector2(radius, radius), color, width, true)
-	draw_line(at + Vector2(-radius, radius), at + Vector2(radius, -radius), color, width, true)
-
-
-func _draw_gem(center: Vector2, radius: float, color: Color) -> void:
-	var poly := PackedVector2Array([
-		center + Vector2(0, -radius),
-		center + Vector2(radius * 0.86, 0),
-		center + Vector2(0, radius),
-		center + Vector2(-radius * 0.86, 0),
-	])
-	draw_colored_polygon(poly, color)
-
-
-func _draw_spark(center: Vector2, radius: float, color: Color) -> void:
-	var poly := PackedVector2Array([
-		center + Vector2(0.22, -1.0) * radius,
-		center + Vector2(-0.42, -0.02) * radius,
-		center + Vector2(0.02, -0.02) * radius,
-		center + Vector2(-0.28, 1.0) * radius,
-	])
-	draw_polyline(poly, color, maxf(2.4, radius * 0.34), true)
-
-
-func _draw_magnet(center: Vector2, radius: float, color: Color) -> void:
-	var width := maxf(2.0, radius * 0.26)
-	var arc_r := radius * 0.72
-	var pts := PackedVector2Array()
-	var steps := 10
-	for step in steps + 1:
-		var angle := PI - PI * float(step) / float(steps)
-		pts.append(center + Vector2(cos(angle), -sin(angle)) * arc_r)
-	draw_polyline(pts, color, width, true)
-	var left := center + Vector2(-arc_r, 0)
-	var right := center + Vector2(arc_r, 0)
-	var foot := radius * 0.62
-	draw_line(left, left + Vector2(0, foot), color, width, true)
-	draw_line(right, right + Vector2(0, foot), color, width, true)
-
-
-func _draw_crown(center: Vector2, radius: float, color: Color) -> void:
-	var w := radius * 0.95
-	var poly := PackedVector2Array([
-		center + Vector2(-w, radius * 0.62),
-		center + Vector2(-w, -radius * 0.18),
-		center + Vector2(-w * 0.48, radius * 0.16),
-		center + Vector2(0, -radius * 0.95),
-		center + Vector2(w * 0.48, radius * 0.16),
-		center + Vector2(w, -radius * 0.18),
-		center + Vector2(w, radius * 0.62),
-	])
-	draw_colored_polygon(poly, color)
 
 
 func _metrics() -> Dictionary:

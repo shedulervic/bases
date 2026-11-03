@@ -10,9 +10,14 @@ const P1_DARK := Color8(163, 59, 44)
 const P2 := Color8(47, 158, 150)
 const P2_DARK := Color8(29, 110, 104)
 const GOLD := Color8(230, 179, 77)
-const SPARK_C := Color8(242, 211, 107)
-const MAGNET_C := Color8(176, 156, 255)
-const CROWN_C := Color8(255, 214, 120)
+const GEM_C := Color8(70, 130, 235)
+const SPARK_C := Color8(250, 205, 50)
+const MAGNET_C := Color8(150, 110, 240)
+const MAGNET_TIP := Color8(205, 212, 218)
+const CROWN_C := Color8(240, 140, 35)
+const WATER := Color8(52, 98, 128)
+const READY := Color8(250, 214, 150)
+const DANGER_TEXT := Color8(240, 130, 110)
 const MUTED := Color8(138, 160, 170)
 const PANEL := Color8(28, 46, 56)
 const BUTTON := Color8(36, 58, 70)
@@ -39,7 +44,7 @@ static func color_of(player: int) -> Color:
 static func resource_color(res: String) -> Color:
 	match res:
 		"gem":
-			return GOLD
+			return GEM_C
 		"spark":
 			return SPARK_C
 		"magnet":

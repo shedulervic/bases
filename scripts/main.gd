@@ -4,6 +4,17 @@ const Palette = preload("res://scripts/palette.gd")
 const Campaign = preload("res://scripts/campaign.gd")
 const BoardView = preload("res://scripts/board.gd")
 const GameRules = preload("res://scripts/rules.gd")
+const LevelCatalog = preload("res://scripts/levels.gd")
+const RuleArt = preload("res://scripts/rule_art.gd")
+const ShapePreview = preload("res://scripts/shape_preview.gd")
+const Confetti = preload("res://scripts/confetti.gd")
+
+const LEGEND := [
+	["gem", "2 очка"],
+	["crown", "3 очка"],
+	["spark", "ещё ход"],
+	["magnet", "берёт соседей"],
+]
 
 var _screen := "menu"
 var board: BoardView
@@ -12,6 +23,7 @@ var rules_screen: Control
 var game_screen: Control
 var pending_level: Dictionary = {}
 var menu_preview: ShapePreview
+var menu_legend: HFlowContainer
 var stat_level: Label
 var stat_points: Label
 var stat_goal: Label
@@ -30,12 +42,13 @@ var p2_meta: Label
 var spark_button: Button
 var overlay: Control
 var overlay_next: Button
+var overlay_again: Button
+var overlay_panel: PanelContainer
+var overlay_confetti: Confetti
 var overlay_title: Label
 var overlay_sub: Label
 var overlay_s1: Label
 var overlay_s2: Label
-var rules_label: Label
-var rules_scroll: ScrollContainer
 var _back_at := 0
 
 
@@ -63,11 +76,11 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _apply_theme() -> void:
 	var theme := Theme.new()
-	theme.default_font_size = 22
+	theme.default_font_size = 28
 	theme.set_color("font_color", "Label", Palette.CREAM)
 	theme.set_color("font_color", "Button", Palette.CREAM)
 	theme.set_color("font_disabled_color", "Button", Palette.MUTED)
-	theme.set_font_size("font_size", "Button", 22)
+	theme.set_font_size("font_size", "Button", 30)
 	theme.set_stylebox("normal", "Button", _flat(Palette.BUTTON, 16))
 	theme.set_stylebox("hover", "Button", _flat(Palette.BUTTON_HOVER, 16))
 	theme.set_stylebox("pressed", "Button", _flat(Palette.BUTTON_DOWN, 16))
@@ -114,13 +127,21 @@ func _build_menu() -> Control:
 	root.add_child(box)
 
 	box.add_child(_spacer())
-	box.add_child(_label("Квадраты", 52, Palette.CREAM, true))
-	box.add_child(_label("Каждый следующий уровень — после победы", 18, Palette.CREAM_DIM, true))
+	box.add_child(_label("Квадраты", 64, Palette.CREAM, true))
+	var tagline := _label("Каждый следующий уровень — после победы", 26, Palette.CREAM_DIM, true)
+	tagline.autowrap_mode = TextServer.AUTOWRAP_WORD
+	box.add_child(tagline)
 
 	menu_preview = ShapePreview.new()
-	menu_preview.box_size = Vector2(150, 150)
+	menu_preview.box_size = Vector2(220, 220)
 	menu_preview.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	box.add_child(menu_preview)
+
+	menu_legend = HFlowContainer.new()
+	menu_legend.alignment = FlowContainer.ALIGNMENT_CENTER
+	menu_legend.add_theme_constant_override("h_separation", 22)
+	menu_legend.add_theme_constant_override("v_separation", 4)
+	box.add_child(menu_legend)
 
 	var stats := PanelContainer.new()
 	stats.add_theme_stylebox_override("panel", _flat(Palette.PANEL, 16))
@@ -128,9 +149,9 @@ func _build_menu() -> Control:
 	var stats_box := VBoxContainer.new()
 	stats_box.add_theme_constant_override("separation", 2)
 	stats.add_child(stats_box)
-	stat_level = _label("Уровень 1", 22, Palette.CREAM, true)
-	stat_points = _label("Очки: 0", 28, Palette.GOLD, true)
-	stat_goal = _label("", 16, Palette.CREAM_DIM, true)
+	stat_level = _label("Уровень 1", 30, Palette.CREAM, true)
+	stat_points = _label("Очки: 0", 32, Palette.GOLD, true)
+	stat_goal = _label("", 26, Palette.CREAM_DIM, true)
 	stat_goal.autowrap_mode = TextServer.AUTOWRAP_WORD
 	stats_box.add_child(stat_level)
 	stats_box.add_child(stat_points)
@@ -138,7 +159,7 @@ func _build_menu() -> Control:
 	box.add_child(stats)
 
 	var play := _button("Играть")
-	_paint_button(play, Palette.P1, Palette.CREAM)
+	_paint_button(play, Palette.P1_DARK, Palette.CREAM)
 	play.pressed.connect(_play_current)
 	box.add_child(play)
 
@@ -146,12 +167,15 @@ func _build_menu() -> Control:
 	rules.pressed.connect(func() -> void: _show("rules"))
 	box.add_child(rules)
 
+	box.add_child(_spacer())
+	var footer := _label("После третьего уровня форма поля меняется, условия остаются", 24, Palette.MUTED, true)
+	footer.autowrap_mode = TextServer.AUTOWRAP_WORD
+	box.add_child(footer)
+
 	reset_button = _button("Сбросить прогресс")
+	_quiet_button(reset_button)
 	reset_button.pressed.connect(func() -> void: reset_dialog.visible = true)
 	box.add_child(reset_button)
-
-	box.add_child(_spacer())
-	box.add_child(_label("После третьего уровня форма поля меняется, условия остаются", 16, Palette.MUTED, true))
 
 	reset_dialog = _build_reset_dialog()
 	root.add_child(reset_dialog)
@@ -173,19 +197,19 @@ func _build_reset_dialog() -> Control:
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	dim.add_child(center)
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(280, 0)
+	panel.custom_minimum_size = Vector2(560, 0)
 	panel.add_theme_stylebox_override("panel", _flat(Palette.PANEL, 20))
 	center.add_child(panel)
 	var dialog := VBoxContainer.new()
-	dialog.add_theme_constant_override("separation", 10)
+	dialog.add_theme_constant_override("separation", 14)
 	panel.add_child(dialog)
-	var title := _label("Сбросить прогресс?", 26, Palette.CREAM, true)
-	var body := _label("Очки и открытые уровни пропадут. Кампания начнётся с Калитки.", 16, Palette.CREAM_DIM, true)
+	var title := _label("Сбросить прогресс?", 34, Palette.CREAM, true)
+	var body := _label("Очки и открытые уровни пропадут. Кампания начнётся с Калитки.", 26, Palette.CREAM_DIM, true)
 	body.autowrap_mode = TextServer.AUTOWRAP_WORD
 	dialog.add_child(title)
 	dialog.add_child(body)
-	var confirm := _button("Сбросить")
-	_paint_button(confirm, Palette.P1, Palette.CREAM)
+	var confirm := _button("Да, сбросить")
+	_paint_button(confirm, Palette.BUTTON, Palette.DANGER_TEXT)
 	confirm.pressed.connect(_confirm_reset)
 	dialog.add_child(confirm)
 	var cancel := _button("Отмена")
@@ -206,20 +230,25 @@ func _build_rules() -> Control:
 	box.set_anchors_preset(Control.PRESET_FULL_RECT)
 	box.add_theme_constant_override("separation", 12)
 	root.add_child(box)
-	box.add_child(_label("Как играть", 36, Palette.CREAM, true))
+	box.add_child(_label("Как играть", 40, Palette.CREAM, true))
 
-	rules_scroll = ScrollContainer.new()
-	rules_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	rules_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	box.add_child(rules_scroll)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	box.add_child(scroll)
 
-	rules_label = _label(_rules_text(), 20, Palette.CREAM_DIM, false)
-	rules_label.autowrap_mode = TextServer.AUTOWRAP_WORD
-	rules_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	rules_scroll.add_child(rules_label)
-	rules_scroll.resized.connect(func() -> void:
-		rules_label.custom_minimum_size.x = maxf(120.0, rules_scroll.size.x - 8.0)
-	)
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list.add_theme_constant_override("separation", 16)
+	scroll.add_child(list)
+	for step in _rule_steps():
+		if step[0] == "":
+			list.add_child(_label(str(step[1]), 32, Palette.GOLD, false))
+		else:
+			list.add_child(_rule_row(str(step[0]), str(step[1])))
+	var goal := _label("Победите и наберите цель по очкам — откроется следующий уровень. Вы играете за Алых против ИИ.", 26, Palette.CREAM_DIM, false)
+	goal.autowrap_mode = TextServer.AUTOWRAP_WORD
+	list.add_child(goal)
 
 	var back := _button("Назад")
 	back.pressed.connect(func() -> void: _show("menu"))
@@ -234,8 +263,8 @@ func _build_game() -> Control:
 	box.add_theme_constant_override("separation", 8)
 	root.add_child(box)
 
-	level_title = _label("Поле", 28, Palette.CREAM, true)
-	mode_label = _label("", 15, Palette.MUTED, true)
+	level_title = _label("Поле", 32, Palette.CREAM, true)
+	mode_label = _label("", 26, Palette.CREAM_DIM, true)
 	box.add_child(level_title)
 	box.add_child(mode_label)
 
@@ -253,9 +282,11 @@ func _build_game() -> Control:
 	scores.add_child(p1_panel)
 	scores.add_child(p2_panel)
 
-	status_label = _label("Ход", 22, Palette.CREAM, true)
-	hint_label = _label("", 15, Palette.MUTED, true)
+	status_label = _label("Ход", 32, Palette.CREAM, true)
+	hint_label = _label("", 26, Palette.MUTED, true)
 	hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	hint_label.custom_minimum_size = Vector2(0, 72)
+	hint_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	box.add_child(status_label)
 	box.add_child(hint_label)
 
@@ -267,13 +298,15 @@ func _build_game() -> Control:
 	board.finished.connect(_on_finished)
 	box.add_child(board)
 
-	spark_button = _button("Искра")
-	spark_button.pressed.connect(func() -> void: board.toggle_spark())
-	box.add_child(spark_button)
-
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 10)
 	box.add_child(actions)
+	spark_button = _button("Искра")
+	spark_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	spark_button.size_flags_stretch_ratio = 1.3
+	spark_button.visible = false
+	spark_button.pressed.connect(func() -> void: board.toggle_spark())
+	actions.add_child(spark_button)
 	var again := _button("Заново")
 	again.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	again.pressed.connect(_restart)
@@ -294,35 +327,41 @@ func _build_game() -> Control:
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.add_child(center)
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(280, 0)
+	panel.custom_minimum_size = Vector2(560, 0)
 	panel.add_theme_stylebox_override("panel", _flat(Palette.PANEL, 20))
+	panel.resized.connect(func() -> void: panel.pivot_offset = panel.size * 0.5)
 	center.add_child(panel)
+	overlay_panel = panel
+	overlay_confetti = Confetti.new()
+	overlay_confetti.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(overlay_confetti)
 	var result := VBoxContainer.new()
-	result.add_theme_constant_override("separation", 8)
+	result.add_theme_constant_override("separation", 12)
 	panel.add_child(result)
-	overlay_title = _label("Партия", 32, Palette.CREAM, true)
-	overlay_sub = _label("", 16, Palette.CREAM_DIM, true)
+	overlay_title = _label("Партия", 40, Palette.CREAM, true)
+	overlay_sub = _label("", 26, Palette.CREAM_DIM, true)
 	overlay_sub.autowrap_mode = TextServer.AUTOWRAP_WORD
 	result.add_child(overlay_title)
 	var score_row := HBoxContainer.new()
 	score_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	score_row.add_theme_constant_override("separation", 12)
 	result.add_child(score_row)
-	overlay_s1 = _label("0", 48, Palette.P1, true)
-	overlay_s2 = _label("0", 48, Palette.P2, true)
+	overlay_s1 = _label("0", 64, Palette.P1, true)
+	overlay_s2 = _label("0", 64, Palette.P2, true)
 	score_row.add_child(overlay_s1)
-	score_row.add_child(_label(":", 40, Palette.CREAM, true))
+	score_row.add_child(_label(":", 52, Palette.CREAM, true))
 	score_row.add_child(overlay_s2)
 	result.add_child(overlay_sub)
 	overlay_next = _button("Дальше")
-	_paint_button(overlay_next, Palette.P1, Palette.CREAM)
+	_paint_button(overlay_next, Palette.P1_DARK, Palette.CREAM)
 	overlay_next.visible = false
 	overlay_next.pressed.connect(_play_current)
 	result.add_child(overlay_next)
-	var rematch := _button("Ещё раз")
-	rematch.pressed.connect(_restart)
-	result.add_child(rematch)
+	overlay_again = _button("Ещё раз")
+	overlay_again.pressed.connect(_restart)
+	result.add_child(overlay_again)
 	var fields := _button("В меню")
+	_quiet_button(fields)
 	fields.pressed.connect(func() -> void:
 		overlay.visible = false
 		_show("menu")
@@ -346,9 +385,9 @@ func _score_card(player: int) -> Dictionary:
 	mark.player = player
 	mark.mark_color = Palette.color_of(player)
 	title_row.add_child(mark)
-	title_row.add_child(_label(Palette.name_of(player), 16, Palette.CREAM_DIM, false))
-	var score := _label("0", 40, Palette.color_of(player), true)
-	var meta := _label("очки", 14, Palette.MUTED, true)
+	title_row.add_child(_label(Palette.name_of(player), 24, Palette.CREAM_DIM, false))
+	var score := _label("0", 48, Palette.color_of(player), true)
+	var meta := _label("очки", 24, Palette.MUTED, true)
 	box.add_child(score)
 	box.add_child(meta)
 	return {"panel": panel, "score": score, "meta": meta}
@@ -375,8 +414,10 @@ func _refresh_menu() -> void:
 	stat_goal.text = goal_line
 	reset_button.disabled = Campaign.cleared_count() == 0 and Campaign.total_points() == 0
 	menu_preview.rows = level.rows
-	menu_preview.marks = _mark_colors(level)
+	menu_preview.holes = LevelCatalog.holes(level.rows)
+	menu_preview.resources = level.get("res", {})
 	menu_preview.queue_redraw()
+	_refresh_legend(level.get("res", {}))
 
 
 func _restart() -> void:
@@ -445,15 +486,17 @@ func _spark_meta(player: int) -> String:
 
 
 func _refresh_spark_button() -> void:
-	var count := int(board.sparks[board.current]) if not board.over else 0
+	var holder := 1 if board.vs_ai else board.current
+	var count := int(board.sparks[holder]) if not board.over else 0
+	spark_button.visible = count > 0
 	if board.spark_armed:
-		spark_button.text = "Искра готова"
+		spark_button.text = "Готова"
 		_paint_button(spark_button, Palette.GOLD, Palette.INK)
 	elif board.can_toggle_spark():
 		spark_button.text = "Искра ×%d" % count
 		_paint_button(spark_button, Palette.BUTTON, Palette.GOLD)
 	else:
-		spark_button.text = "Искра ×%d" % count if count > 0 else "Искра"
+		spark_button.text = "Искра ×%d" % count
 		_paint_button(spark_button, Color8(24, 36, 44), Palette.MUTED)
 	spark_button.disabled = not board.can_toggle_spark()
 
@@ -468,31 +511,52 @@ func _on_finished(scores, winner) -> void:
 	overlay_s2.text = str(int(scores[2]))
 	overlay_next.visible = cleared
 	if cleared:
-		Campaign.note_clear(index, score)
-		overlay_title.text = "Уровень пройден"
-		overlay_title.add_theme_color_override("font_color", Palette.P1)
-		overlay_sub.text = "Набрано %d при цели %d. Следующий уровень открыт. Всего очков: %d." % [score, target, Campaign.total_points()]
-	elif int(winner) == 1:
-		overlay_title.text = "Победа не засчитана"
-		overlay_title.add_theme_color_override("font_color", Palette.GOLD)
-		overlay_sub.text = "Нужно %d очков, набрано %d. Доберите цель и обыграйте Бирюзу." % [target, score]
-	elif int(winner) == 0:
-		overlay_title.text = "Ничья"
-		overlay_title.add_theme_color_override("font_color", Palette.CREAM)
-		overlay_sub.text = "Чтобы открыть следующий уровень, нужны победа и %d очков." % target
+		_paint_button(overlay_again, Palette.BUTTON, Palette.CREAM)
 	else:
-		overlay_title.text = "Победа · Бирюза"
+		_paint_button(overlay_again, Palette.P1_DARK, Palette.CREAM)
+	if cleared:
+		Campaign.note_clear(index, score)
+		overlay_title.text = "Уровень пройден!"
+		overlay_title.add_theme_color_override("font_color", Palette.P1)
+		overlay_sub.text = "Цель %d взята. Открыт уровень %d!" % [target, index + 1]
+	elif int(winner) == 1:
+		overlay_title.text = "Победа!"
+		overlay_title.add_theme_color_override("font_color", Palette.GOLD)
+		overlay_sub.text = "Для нового уровня нужно %d очков, у вас %d. Ещё чуть-чуть!" % [target, score]
+	elif int(winner) == 0:
+		overlay_title.text = "Ничья!"
+		overlay_title.add_theme_color_override("font_color", Palette.CREAM)
+		overlay_sub.text = "Почти! Для нового уровня нужны победа и %d очков." % target
+	else:
+		overlay_title.text = "Бирюза победила"
 		overlay_title.add_theme_color_override("font_color", Palette.P2)
-		overlay_sub.text = "Чтобы открыть следующий уровень, нужны победа и %d очков." % target
+		overlay_sub.text = "Не беда, попробуйте ещё раз. Для нового уровня нужны победа и %d очков." % target
 	overlay.visible = true
+	overlay_panel.scale = Vector2(0.86, 0.86)
+	create_tween().tween_property(overlay_panel, "scale", Vector2.ONE, 0.32).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	if cleared:
+		overlay_confetti.burst()
+	else:
+		overlay_confetti.stop()
 
 
-func _mark_colors(level: Dictionary) -> Dictionary:
-	var marks := {}
-	var resources: Dictionary = level.get("res", {})
+func _refresh_legend(resources: Dictionary) -> void:
+	for child in menu_legend.get_children():
+		child.queue_free()
+	var present := {}
 	for key in resources.keys():
-		marks[str(key)] = Palette.resource_color(str(resources[key]))
-	return marks
+		present[str(resources[key])] = true
+	for entry in LEGEND:
+		if not present.has(entry[0]):
+			continue
+		var item := HBoxContainer.new()
+		item.add_theme_constant_override("separation", 6)
+		var art := RuleArt.new()
+		art.kind = str(entry[0])
+		art.box = 44.0
+		item.add_child(art)
+		item.add_child(_label(str(entry[1]), 22, Palette.CREAM_DIM, false))
+		menu_legend.add_child(item)
 
 
 func _score_style(player: int, active: int) -> StyleBoxFlat:
@@ -501,25 +565,35 @@ func _score_style(player: int, active: int) -> StyleBoxFlat:
 	return _flat(Palette.PANEL, 16, border, width)
 
 
-func _rules_text() -> String:
-	return "\n".join(PackedStringArray([
-		"Игроки по очереди ставят одну палочку — сторону клетки.",
-		"",
-		"Четвёртая палочка закрывает клетку: она ваша, и вы ходите снова. Общая палочка может закрыть сразу две клетки. Цепочка захватов остаётся у вас, пока закрываются новые клетки.",
-		"",
-		"Дыра — это пустое место внутри поля. Там нет клетки и нечего захватывать.",
-		"",
-		"Ресурсы достаются тому, кто закрыл клетку.",
-		"",
-		"Самоцвет — 2 очка вместо одного.",
-		"Корона — 3 очка и искра в запас.",
-		"Искра — запасная палочка. Нажмите «Искра», затем поставьте грань: ход останется у вас, даже если клетка не закрылась.",
-		"Магнит — вместе с клеткой забирает соседние, у которых уже стоят три стороны. Так забирается готовая база рядом. Если среди них тоже есть магнит, захват продолжается.",
-		"",
-		"На клетке победителя стоит крестик, на клетке соперника — кружок. Побеждает тот, у кого больше очков.",
-		"",
-		"Уровни идут по порядку. Следующий открывается, только если вы победили и набрали цель по очкам. Первые три поля фиксированные. Дальше тип остаётся — пруд, крест, лестница, острова, змейка или крепость, — а форма этого типа каждый раз другая. Вы играете за Алых против ИИ.",
-	]))
+func _rule_steps() -> Array:
+	return [
+		["stick", "Ходите по очереди. За ход — одна палочка между двумя точками."],
+		["close", "Четвёртая палочка закрывает клетку. Клетка ваша, и вы ходите ещё раз."],
+		["hole", "Вода — это дыра. Там нет клетки, туда не ходят."],
+		["marks", "Крестик — ваши клетки. Кружок — клетки соперника. У кого больше очков, тот победил."],
+		["", "Ресурсы в клетках"],
+		["gem", "Самоцвет — 2 очка."],
+		["crown", "Корона — 3 очка и искра."],
+		["spark", "Искра — нажмите «Искра» и ставьте палочку: ход останется у вас."],
+		["magnet", "Магнит — заберёт и соседние клетки, где уже три палочки."],
+	]
+
+
+func _rule_row(kind: String, text: String) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 18)
+	var art := RuleArt.new()
+	art.kind = kind
+	art.box = 132.0 if kind in ["stick", "close", "hole", "marks"] else 96.0
+	art.custom_minimum_size = Vector2(132, art.box)
+	row.add_child(art)
+	var label := _label(text, 28, Palette.CREAM, false)
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(label)
+	return row
 
 
 func _spacer() -> Control:
@@ -542,7 +616,7 @@ func _label(text: String, font_size: int, color: Color, center: bool) -> Label:
 func _button(text: String) -> Button:
 	var button := Button.new()
 	button.text = text
-	button.custom_minimum_size = Vector2(0, 58)
+	button.custom_minimum_size = Vector2(0, 88)
 	button.focus_mode = Control.FOCUS_NONE
 	return button
 
@@ -558,6 +632,20 @@ func _paint_button(button: Button, fill: Color, font: Color) -> void:
 	button.add_theme_color_override("font_disabled_color", Palette.MUTED)
 	button.add_theme_color_override("font_hover_color", font)
 	button.add_theme_color_override("font_pressed_color", font)
+
+
+func _quiet_button(button: Button) -> void:
+	var clear := Color(0, 0, 0, 0)
+	button.add_theme_stylebox_override("normal", _flat(clear, 16))
+	button.add_theme_stylebox_override("hover", _flat(Color(Palette.BUTTON, 0.5), 16))
+	button.add_theme_stylebox_override("pressed", _flat(Palette.BUTTON_DOWN, 16))
+	button.add_theme_stylebox_override("disabled", _flat(clear, 16))
+	button.add_theme_stylebox_override("focus", _flat(clear, 16))
+	button.add_theme_font_size_override("font_size", 26)
+	button.add_theme_color_override("font_color", Palette.MUTED)
+	button.add_theme_color_override("font_hover_color", Palette.CREAM_DIM)
+	button.add_theme_color_override("font_pressed_color", Palette.CREAM_DIM)
+	button.add_theme_color_override("font_disabled_color", Color(Palette.MUTED, 0.4))
 
 
 func _flat(fill: Color, radius: int, border: Color = Color(0, 0, 0, 0), border_width: int = 0) -> StyleBoxFlat:
@@ -580,53 +668,20 @@ func _flat(fill: Color, radius: int, border: Color = Color(0, 0, 0, 0), border_w
 	return style
 
 
-class ShapePreview extends Control:
-	var box_size := Vector2(78, 78)
-	var rows: Array = []
-	var marks: Dictionary = {}
-
-	func _ready() -> void:
-		custom_minimum_size = box_size
-		mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-	func _draw() -> void:
-		if rows.is_empty() or size.x < 4.0 or size.y < 4.0:
-			return
-		var height := rows.size()
-		var width := 0
-		for line in rows:
-			width = maxi(width, str(line).length())
-		if width == 0 or height == 0:
-			return
-		var pad := 3.0
-		var cell := minf((size.x - pad * 2.0) / float(width), (size.y - pad * 2.0) / float(height))
-		var origin := Vector2((size.x - cell * width) * 0.5, (size.y - cell * height) * 0.5)
-		for r in height:
-			var line := str(rows[r])
-			for c in line.length():
-				if line[c] != "#":
-					continue
-				var rect := Rect2(origin + Vector2(c, r) * cell + Vector2(1, 1), Vector2(cell, cell) - Vector2(2, 2))
-				draw_rect(rect, Color8(243, 230, 200), true)
-				var key := "%d,%d" % [r, c]
-				if marks.has(key):
-					draw_circle(rect.get_center(), maxf(2.0, cell * 0.16), marks[key])
-
-
 class PlayerMark extends Control:
 	var player := 1
 	var mark_color := Color8(225, 90, 69)
 
 	func _ready() -> void:
-		custom_minimum_size = Vector2(28, 28)
+		custom_minimum_size = Vector2(36, 36)
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	func _draw() -> void:
 		var center := size * 0.5
-		draw_circle(center, 11, mark_color)
-		var ink := Color8(243, 230, 200)
+		draw_circle(center, 16, mark_color)
+		var ink := Color8(36, 28, 22)
 		if player == 1:
-			draw_line(center + Vector2(-4.5, -4.5), center + Vector2(4.5, 4.5), ink, 2.0, true)
-			draw_line(center + Vector2(-4.5, 4.5), center + Vector2(4.5, -4.5), ink, 2.0, true)
+			draw_line(center + Vector2(-6.5, -6.5), center + Vector2(6.5, 6.5), ink, 3.0, true)
+			draw_line(center + Vector2(-6.5, 6.5), center + Vector2(6.5, -6.5), ink, 3.0, true)
 		else:
-			draw_arc(center, 4.5, 0.0, TAU, 16, ink, 2.0, true)
+			draw_arc(center, 6.5, 0.0, TAU, 20, ink, 3.0, true)
