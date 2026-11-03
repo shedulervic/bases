@@ -5,6 +5,7 @@ const LevelCatalog = preload("res://scripts/levels.gd")
 const SquaresAi = preload("res://scripts/ai.gd")
 const Campaign = preload("res://scripts/campaign.gd")
 const Palette = preload("res://scripts/palette.gd")
+const GameMusic = preload("res://scripts/music.gd")
 
 var fails := 0
 
@@ -25,8 +26,16 @@ func _run() -> void:
 	_test_playouts()
 	_test_campaign()
 	_test_themes()
+	_test_music()
 	print("SELFTEST ", "OK" if fails == 0 else "FAILED (%d)" % fails)
 	quit(0 if fails == 0 else 1)
+
+
+func _test_music() -> void:
+	var game_track := GameMusic.make_stream(GameMusic.GAME_TRACK)
+	check(game_track is AudioStreamMP3 and (game_track as AudioStreamMP3).loop, "музыка партии зациклена")
+	var menu_track := GameMusic.make_stream(GameMusic.MENU_TRACK)
+	check(menu_track is AudioStreamOggVorbis and (menu_track as AudioStreamOggVorbis).loop, "музыка меню зациклена")
 
 
 func _test_themes() -> void:

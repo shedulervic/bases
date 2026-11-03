@@ -8,6 +8,7 @@ const LevelCatalog = preload("res://scripts/levels.gd")
 const RuleArt = preload("res://scripts/rule_art.gd")
 const ShapePreview = preload("res://scripts/shape_preview.gd")
 const Confetti = preload("res://scripts/confetti.gd")
+const GameMusic = preload("res://scripts/music.gd")
 
 const LEGEND := [
 	["gem", "2 очка"],
@@ -52,6 +53,10 @@ var overlay_s1: Label
 var overlay_s2: Label
 var background: ColorRect
 var host: Control
+var sound_button: Button
+var music: AudioStreamPlayer
+var menu_track: AudioStream
+var game_track: AudioStream
 var _back_at := 0
 
 
@@ -60,6 +65,7 @@ func _ready() -> void:
 	Palette.restore()
 	_apply_theme()
 	_build()
+	_setup_music()
 	_show("menu")
 
 
@@ -253,6 +259,9 @@ func _build_settings() -> Control:
 	box.add_theme_constant_override("separation", 14)
 	root.add_child(box)
 	box.add_child(_label("Настройки", 40, Palette.CREAM, true))
+	sound_button = _button(_sound_caption())
+	sound_button.pressed.connect(_toggle_sound)
+	box.add_child(sound_button)
 	box.add_child(_label("Тема", 32, Palette.GOLD, true))
 	var themes := HBoxContainer.new()
 	themes.add_theme_constant_override("separation", 10)
@@ -478,6 +487,43 @@ func _refresh_menu() -> void:
 	_refresh_legend(level.get("res", {}))
 
 
+func _setup_music() -> void:
+	music = AudioStreamPlayer.new()
+	menu_track = GameMusic.make_stream(GameMusic.MENU_TRACK)
+	game_track = GameMusic.make_stream(GameMusic.GAME_TRACK)
+	add_child(music)
+
+
+func _sound_caption() -> String:
+	if GameMusic.enabled():
+		return "Звук: вкл"
+	return "Звук: выкл"
+
+
+func _toggle_sound() -> void:
+	GameMusic.set_enabled(not GameMusic.enabled())
+	sound_button.text = _sound_caption()
+	_sync_music()
+
+
+func _sync_music() -> void:
+	if music == null:
+		return
+	if not GameMusic.enabled():
+		if music.playing:
+			music.stop()
+		return
+	var track: AudioStream = game_track if _screen == "game" else menu_track
+	if track == null:
+		if music.playing:
+			music.stop()
+		return
+	if music.stream == track and music.playing:
+		return
+	music.stream = track
+	music.play()
+
+
 func _restart() -> void:
 	overlay.visible = false
 	board.restart()
@@ -496,6 +542,7 @@ func _show(screen: String) -> void:
 		board.resume()
 	else:
 		board.suspend()
+	_sync_music()
 
 
 func _back() -> void:
