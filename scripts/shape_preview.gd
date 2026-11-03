@@ -38,7 +38,7 @@ func _draw() -> void:
 			if line[c] != "#":
 				continue
 			var rect := Rect2(origin + Vector2(c, r) * cell + Vector2(1, 1), Vector2(cell, cell) - Vector2(2, 2))
-			draw_rect(rect, Palette.CREAM, true)
+			draw_rect(rect, Palette.CELL, true)
 			var key := "%d,%d" % [r, c]
 			if resources.has(key):
 				BoardArt.resource(self, str(resources[key]), rect.get_center(), maxf(4.0, cell * 0.32))

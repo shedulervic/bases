@@ -17,7 +17,7 @@ func _ready() -> void:
 
 
 func burst() -> void:
-	var colors := [Palette.P1, Palette.P2, Palette.GOLD, Palette.GEM_C, Palette.CREAM]
+	var colors := [Palette.P1, Palette.P2, Palette.GOLD, Palette.GEM_C, Palette.ON_ACCENT]
 	_pieces.clear()
 	for i in 70:
 		_pieces.append({

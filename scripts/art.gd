@@ -32,7 +32,7 @@ static func ring(canvas: CanvasItem, at: Vector2, radius: float, color: Color) -
 
 static func water(canvas: CanvasItem, rect: Rect2) -> void:
 	canvas.draw_rect(rect, Palette.WATER, true)
-	var wave := Color(Palette.CREAM, 0.38)
+	var wave := Color(Palette.ON_ACCENT, 0.38)
 	var width := maxf(1.5, rect.size.x * 0.04)
 	for row in 2:
 		var y := rect.position.y + rect.size.y * (0.38 + 0.28 * row)

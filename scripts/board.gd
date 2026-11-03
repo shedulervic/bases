@@ -358,13 +358,13 @@ func _draw_cell(cell: Vector2i, metrics: Dictionary) -> void:
 	var cell_px := _cs(metrics)
 	var owner := int(cells[cell].owner)
 	var rect := Rect2(top_left, Vector2(cell_px, cell_px))
-	var fill: Color = Palette.CREAM
+	var fill: Color = Palette.CELL
 	if owner == 0 and GameRules.edge_count(cell, h_edges, v_edges) == 3:
 		fill = Palette.READY
 	if owner != 0:
 		var shown := clampf(float(claim_anim.get(cell, 1.0)), 0.0, 1.0)
 		var ease := 1.0 - pow(1.0 - shown, 3.0)
-		fill = Palette.CREAM.lerp(Palette.color_of(owner), ease)
+		fill = Palette.CELL.lerp(Palette.color_of(owner), ease)
 		var shrink := (1.0 - ease) * cell_px * 0.12
 		rect = Rect2(top_left + Vector2(shrink, shrink), Vector2(cell_px - shrink * 2.0, cell_px - shrink * 2.0))
 	draw_rect(rect, fill, true)
@@ -424,7 +424,7 @@ func _draw_mark_and_resource(cell: Vector2i, metrics: Dictionary) -> void:
 			BoardArt.ring(self, at, mark_r, mark)
 	if res == "":
 		return
-	var chip := Color(1, 1, 1, 0.55) if owner == 0 else Color(Palette.CREAM, 0.9)
+	var chip := Color(1, 1, 1, 0.55) if owner == 0 else Color(Palette.CELL, 0.9)
 	draw_circle(icon_at, radius * 1.4, chip)
 	BoardArt.resource(self, res, icon_at, radius)
 
@@ -446,7 +446,7 @@ func _draw_toasts(metrics: Dictionary) -> void:
 		var text_size := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
 		var box := Rect2(center.x - text_size.x * 0.5 - 8.0, center.y - font.get_ascent(font_size) - 4.0, text_size.x + 16.0, text_size.y + 8.0)
 		draw_rect(box, Color(0, 0, 0, 0.58 * alpha), true)
-		draw_string(font, Vector2(box.position.x + 8.0, box.position.y + 4.0 + font.get_ascent(font_size)), text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(Palette.CREAM, alpha))
+		draw_string(font, Vector2(box.position.x + 8.0, box.position.y + 4.0 + font.get_ascent(font_size)), text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(Palette.ON_ACCENT, alpha))
 
 
 func _metrics() -> Dictionary:

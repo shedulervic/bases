@@ -4,6 +4,7 @@ const GameRules = preload("res://scripts/rules.gd")
 const LevelCatalog = preload("res://scripts/levels.gd")
 const SquaresAi = preload("res://scripts/ai.gd")
 const Campaign = preload("res://scripts/campaign.gd")
+const Palette = preload("res://scripts/palette.gd")
 
 var fails := 0
 
@@ -23,8 +24,21 @@ func _run() -> void:
 	_test_ai_takes_capture()
 	_test_playouts()
 	_test_campaign()
+	_test_themes()
 	print("SELFTEST ", "OK" if fails == 0 else "FAILED (%d)" % fails)
 	quit(0 if fails == 0 else 1)
+
+
+func _test_themes() -> void:
+	Palette.apply("nope")
+	check(Palette.id == "sand", "по умолчанию песочная тема")
+	Palette.apply("light")
+	check(Palette.id == "light" and Palette.BG.r > 0.75, "светлая тема")
+	Palette.apply("sand")
+	check(Palette.id == "sand" and Palette.BG.r > Palette.BG.b + 0.2, "песочная тема")
+	Palette.apply("night")
+	check(Palette.id == "night" and Palette.BG.r < 0.15, "ночная тема")
+	check(Palette.CELL.is_equal_approx(Color8(243, 230, 200)), "клетки ночной темы")
 
 
 func check(condition: bool, message: String) -> void:

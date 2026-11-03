@@ -35,7 +35,7 @@ func _draw() -> void:
 func _stick(origin: Vector2, s: float) -> void:
 	var cell := s * 0.62
 	var tl := origin + Vector2(s - cell, s - cell) * 0.5
-	draw_rect(Rect2(tl, Vector2(cell, cell)), Palette.CREAM, true)
+	draw_rect(Rect2(tl, Vector2(cell, cell)), Palette.CELL, true)
 	var tr := tl + Vector2(cell, 0)
 	var bl := tl + Vector2(0, cell)
 	var br := tl + Vector2(cell, cell)
@@ -72,7 +72,7 @@ func _hole(origin: Vector2, s: float) -> void:
 			if r == 1 and c == 1:
 				BoardArt.water(self, rect)
 			else:
-				draw_rect(rect, Palette.CREAM, true)
+				draw_rect(rect, Palette.CELL, true)
 	for line in 4:
 		var x := tl + Vector2(line * cell, 0)
 		var y := tl + Vector2(0, line * cell)
@@ -102,7 +102,7 @@ func _marks(origin: Vector2, s: float) -> void:
 func _resource(origin: Vector2, s: float) -> void:
 	var cell := s * 0.7
 	var tl := origin + Vector2(s - cell, s - cell) * 0.5
-	draw_rect(Rect2(tl, Vector2(cell, cell)), Palette.CREAM, true)
+	draw_rect(Rect2(tl, Vector2(cell, cell)), Palette.CELL, true)
 	var center := tl + Vector2(cell, cell) * 0.5
 	var radius := cell * 0.3
 	draw_circle(center, radius * 1.4, Color(1, 1, 1, 0.55))

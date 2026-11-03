@@ -20,6 +20,7 @@ var _screen := "menu"
 var board: BoardView
 var menu_screen: Control
 var rules_screen: Control
+var settings_screen: Control
 var game_screen: Control
 var pending_level: Dictionary = {}
 var menu_preview: ShapePreview
@@ -49,11 +50,14 @@ var overlay_title: Label
 var overlay_sub: Label
 var overlay_s1: Label
 var overlay_s2: Label
+var background: ColorRect
+var host: Control
 var _back_at := 0
 
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	Palette.restore()
 	_apply_theme()
 	_build()
 	_show("menu")
@@ -84,13 +88,13 @@ func _apply_theme() -> void:
 	theme.set_stylebox("normal", "Button", _flat(Palette.BUTTON, 16))
 	theme.set_stylebox("hover", "Button", _flat(Palette.BUTTON_HOVER, 16))
 	theme.set_stylebox("pressed", "Button", _flat(Palette.BUTTON_DOWN, 16))
-	theme.set_stylebox("disabled", "Button", _flat(Color8(24, 36, 44), 16))
+	theme.set_stylebox("disabled", "Button", _flat(Palette.BUTTON_DOWN, 16))
 	theme.set_stylebox("focus", "Button", _flat(Palette.BUTTON, 16, Palette.MUTED, 2))
 	self.theme = theme
 
 
 func _build() -> void:
-	var background := ColorRect.new()
+	background = ColorRect.new()
 	background.color = Palette.BG
 	background.set_anchors_preset(Control.PRESET_FULL_RECT)
 	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -105,15 +109,24 @@ func _build() -> void:
 	margin.add_theme_constant_override("margin_bottom", 18)
 	add_child(margin)
 
-	var host := Control.new()
+	host = Control.new()
 	host.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	host.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	margin.add_child(host)
+	_fill_screens()
 
+
+func _fill_screens() -> void:
+	for child in host.get_children():
+		host.remove_child(child)
+		child.free()
+	background.color = Palette.BG
+	_apply_theme()
 	menu_screen = _build_menu()
 	rules_screen = _build_rules()
+	settings_screen = _build_settings()
 	game_screen = _build_game()
-	for screen in [menu_screen, rules_screen, game_screen]:
+	for screen in [menu_screen, rules_screen, settings_screen, game_screen]:
 		screen.set_anchors_preset(Control.PRESET_FULL_RECT)
 		host.add_child(screen)
 
@@ -159,7 +172,7 @@ func _build_menu() -> Control:
 	box.add_child(stats)
 
 	var play := _button("Играть")
-	_paint_button(play, Palette.P1_DARK, Palette.CREAM)
+	_paint_button(play, Palette.P1_DARK, Palette.ON_ACCENT)
 	play.pressed.connect(_play_current)
 	box.add_child(play)
 
@@ -172,13 +185,10 @@ func _build_menu() -> Control:
 	footer.autowrap_mode = TextServer.AUTOWRAP_WORD
 	box.add_child(footer)
 
-	reset_button = _button("Сбросить прогресс")
-	_quiet_button(reset_button)
-	reset_button.pressed.connect(func() -> void: reset_dialog.visible = true)
-	box.add_child(reset_button)
-
-	reset_dialog = _build_reset_dialog()
-	root.add_child(reset_dialog)
+	var gear := GearButton.new()
+	gear.tooltip_text = "Настройки"
+	gear.pressed.connect(func() -> void: _show("settings"))
+	root.add_child(gear)
 	return root
 
 
@@ -218,10 +228,58 @@ func _build_reset_dialog() -> Control:
 	return dim
 
 
+func _choose_theme(theme_id: String) -> void:
+	if theme_id == Palette.id:
+		return
+	Palette.use(theme_id)
+	call_deferred("_apply_chosen_theme")
+
+
+func _apply_chosen_theme() -> void:
+	_fill_screens()
+	_show("settings")
+
+
 func _confirm_reset() -> void:
 	Campaign.reset()
 	reset_dialog.visible = false
 	_refresh_menu()
+
+
+func _build_settings() -> Control:
+	var root := Control.new()
+	var box := VBoxContainer.new()
+	box.set_anchors_preset(Control.PRESET_FULL_RECT)
+	box.add_theme_constant_override("separation", 14)
+	root.add_child(box)
+	box.add_child(_label("Настройки", 40, Palette.CREAM, true))
+	box.add_child(_label("Тема", 32, Palette.GOLD, true))
+	var themes := HBoxContainer.new()
+	themes.add_theme_constant_override("separation", 10)
+	box.add_child(themes)
+	for entry in [["night", "Ночная"], ["light", "Светлая"], ["sand", "Песочная"]]:
+		var theme_id: String = str(entry[0])
+		var theme_button := _button(str(entry[1]))
+		theme_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		theme_button.add_theme_font_size_override("font_size", 24)
+		if Palette.id == theme_id:
+			_paint_button(theme_button, Palette.BUTTON_HOVER, Palette.CREAM, Palette.GOLD)
+		theme_button.pressed.connect(_choose_theme.bind(theme_id))
+		themes.add_child(theme_button)
+	reset_button = _button("Сбросить прогресс")
+	_paint_button(reset_button, Palette.BUTTON, Palette.DANGER_TEXT)
+	reset_button.pressed.connect(func() -> void: reset_dialog.visible = true)
+	box.add_child(reset_button)
+	var note := _label("Очки и открытые уровни пропадут. Кампания начнётся с Калитки.", 24, Palette.MUTED, true)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD
+	box.add_child(note)
+	box.add_child(_spacer())
+	var back := _button("Назад")
+	back.pressed.connect(func() -> void: _show("menu"))
+	box.add_child(back)
+	reset_dialog = _build_reset_dialog()
+	root.add_child(reset_dialog)
+	return root
 
 
 func _build_rules() -> Control:
@@ -317,7 +375,7 @@ func _build_game() -> Control:
 	actions.add_child(leave)
 
 	overlay = ColorRect.new()
-	overlay.color = Color(20 / 255.0, 32 / 255.0, 40 / 255.0, 0.78)
+	overlay.color = Color(0.04, 0.05, 0.07, 0.72)
 	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	overlay.visible = false
 	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -353,7 +411,7 @@ func _build_game() -> Control:
 	score_row.add_child(overlay_s2)
 	result.add_child(overlay_sub)
 	overlay_next = _button("Дальше")
-	_paint_button(overlay_next, Palette.P1_DARK, Palette.CREAM)
+	_paint_button(overlay_next, Palette.P1_DARK, Palette.ON_ACCENT)
 	overlay_next.visible = false
 	overlay_next.pressed.connect(_play_current)
 	result.add_child(overlay_next)
@@ -430,8 +488,9 @@ func _show(screen: String) -> void:
 	_screen = screen
 	menu_screen.visible = screen == "menu"
 	rules_screen.visible = screen == "rules"
+	settings_screen.visible = screen == "settings"
 	game_screen.visible = screen == "game"
-	if screen == "menu":
+	if screen == "menu" or screen == "settings":
 		_refresh_menu()
 	if screen == "game":
 		board.resume()
@@ -451,8 +510,11 @@ func _back() -> void:
 		_show("menu")
 	elif _screen == "rules":
 		_show("menu")
-	elif _screen == "menu" and reset_dialog.visible:
-		reset_dialog.visible = false
+	elif _screen == "settings":
+		if reset_dialog.visible:
+			reset_dialog.visible = false
+		else:
+			_show("menu")
 	elif _screen == "menu" and OS.has_feature("mobile"):
 		get_tree().quit()
 
@@ -497,7 +559,7 @@ func _refresh_spark_button() -> void:
 		_paint_button(spark_button, Palette.BUTTON, Palette.GOLD)
 	else:
 		spark_button.text = "Искра ×%d" % count
-		_paint_button(spark_button, Color8(24, 36, 44), Palette.MUTED)
+		_paint_button(spark_button, Palette.BUTTON_DOWN, Palette.MUTED)
 	spark_button.disabled = not board.can_toggle_spark()
 
 
@@ -513,7 +575,7 @@ func _on_finished(scores, winner) -> void:
 	if cleared:
 		_paint_button(overlay_again, Palette.BUTTON, Palette.CREAM)
 	else:
-		_paint_button(overlay_again, Palette.P1_DARK, Palette.CREAM)
+		_paint_button(overlay_again, Palette.P1_DARK, Palette.ON_ACCENT)
 	if cleared:
 		Campaign.note_clear(index, score)
 		overlay_title.text = "Уровень пройден!"
@@ -621,11 +683,12 @@ func _button(text: String) -> Button:
 	return button
 
 
-func _paint_button(button: Button, fill: Color, font: Color) -> void:
+func _paint_button(button: Button, fill: Color, font: Color, border: Color = Color(0, 0, 0, 0)) -> void:
 	var down := fill.darkened(0.12)
-	button.add_theme_stylebox_override("normal", _flat(fill, 16))
-	button.add_theme_stylebox_override("hover", _flat(fill.lightened(0.08), 16))
-	button.add_theme_stylebox_override("pressed", _flat(down, 16))
+	var width := 4 if border.a > 0.0 else 0
+	button.add_theme_stylebox_override("normal", _flat(fill, 16, border, width))
+	button.add_theme_stylebox_override("hover", _flat(fill.lightened(0.08), 16, border, width))
+	button.add_theme_stylebox_override("pressed", _flat(down, 16, border, width))
 	button.add_theme_stylebox_override("disabled", _flat(fill.darkened(0.2), 16))
 	button.add_theme_stylebox_override("focus", _flat(fill, 16))
 	button.add_theme_color_override("font_color", font)
@@ -666,6 +729,57 @@ func _flat(fill: Color, radius: int, border: Color = Color(0, 0, 0, 0), border_w
 		style.border_width_right = border_width
 		style.border_width_bottom = border_width
 	return style
+
+
+class GearButton extends Button:
+	func _ready() -> void:
+		text = ""
+		focus_mode = Control.FOCUS_NONE
+		custom_minimum_size = Vector2(88, 88)
+		tooltip_text = "Настройки"
+		set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		offset_left = -88.0
+		offset_top = 0.0
+		offset_right = 0.0
+		offset_bottom = 88.0
+		var empty := StyleBoxEmpty.new()
+		for state in ["normal", "hover", "pressed", "disabled", "focus"]:
+			add_theme_stylebox_override(state, empty)
+		mouse_entered.connect(queue_redraw)
+		mouse_exited.connect(queue_redraw)
+		button_down.connect(queue_redraw)
+		button_up.connect(queue_redraw)
+
+	func _draw() -> void:
+		var center := size * 0.5
+		var radius := minf(size.x, size.y) * 0.34
+		var color := Palette.CREAM
+		if is_pressed():
+			color = Palette.CREAM_DIM
+		elif is_hovered():
+			color = Color(Palette.CREAM).lightened(0.12)
+		var teeth := 8
+		var root_r := radius * 0.68
+		var pts := PackedVector2Array()
+		for i in teeth:
+			var base := TAU * float(i) / float(teeth) - PI * 0.5
+			var step := TAU / float(teeth)
+			var tooth := step * 0.46
+			var lead := (step - tooth) * 0.5
+			var a0 := base
+			var a1 := base + lead
+			var a2 := a1 + tooth
+			var a3 := base + step
+			pts.append(center + Vector2(cos(a0), sin(a0)) * root_r)
+			pts.append(center + Vector2(cos(a1), sin(a1)) * root_r)
+			pts.append(center + Vector2(cos(a1), sin(a1)) * radius)
+			pts.append(center + Vector2(cos(a2), sin(a2)) * radius)
+			pts.append(center + Vector2(cos(a2), sin(a2)) * root_r)
+			pts.append(center + Vector2(cos(a3), sin(a3)) * root_r)
+		draw_colored_polygon(pts, color)
+		draw_circle(center, radius * 0.36, Palette.BG)
+		draw_arc(center, radius * 0.36, 0.0, TAU, 32, color, maxf(2.5, radius * 0.1), true)
+		draw_circle(center, radius * 0.13, color)
 
 
 class PlayerMark extends Control:
